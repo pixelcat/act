@@ -20,6 +20,7 @@ import (
 // NewDockerBuildExecutorInput the input for the NewDockerBuildExecutor function
 type NewDockerBuildExecutorInput struct {
 	ContextDir string
+	Container  Container
 	ImageTag   string
 	Platform   string
 }
@@ -46,8 +47,12 @@ func NewDockerBuildExecutor(input NewDockerBuildExecutorInput) common.Executor {
 			Remove:   true,
 			Platform: input.Platform,
 		}
-
-		buildContext, err := createBuildContext(input.ContextDir, "Dockerfile")
+		var buildContext io.ReadCloser
+		if input.Container != nil {
+			buildContext, err = input.Container.GetContainerArchive(ctx, input.ContextDir+"/.")
+		} else {
+			buildContext, err = createBuildContext(input.ContextDir, "Dockerfile")
+		}
 		if err != nil {
 			return err
 		}
@@ -63,7 +68,6 @@ func NewDockerBuildExecutor(input NewDockerBuildExecutorInput) common.Executor {
 		}
 		return nil
 	}
-
 }
 func createBuildContext(contextDir string, relDockerfile string) (io.ReadCloser, error) {
 	log.Debugf("Creating archive for build context dir '%s' with relative dockerfile '%s'", contextDir, relDockerfile)

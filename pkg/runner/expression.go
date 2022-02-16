@@ -4,11 +4,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/robertkrimen/otto"
@@ -229,6 +229,7 @@ func (rc *RunContext) newVM() *otto.Otto {
 		rc.vmStrategy(),
 		rc.vmMatrix(),
 		rc.vmEnv(),
+		rc.vmNeeds(),
 	}
 	vm := otto.New()
 	for _, configer := range configers {
@@ -265,11 +266,35 @@ func vmEndsWith(vm *otto.Otto) {
 }
 
 func vmFormat(vm *otto.Otto) {
-	_ = vm.Set("format", func(s string, vals ...string) string {
-		for i, v := range vals {
-			s = strings.ReplaceAll(s, fmt.Sprintf("{%d}", i), v)
-		}
-		return s
+	_ = vm.Set("format", func(s string, vals ...otto.Value) string {
+		ex := regexp.MustCompile(`(\{[0-9]+\}|\{.?|\}.?)`)
+		return ex.ReplaceAllStringFunc(s, func(seg string) string {
+			switch seg {
+			case "{{":
+				return "{"
+			case "}}":
+				return "}"
+			default:
+				if len(seg) < 3 || !strings.HasPrefix(seg, "{") {
+					log.Errorf("The following format string is invalid: '%v'", s)
+					return ""
+				}
+				_i := seg[1 : len(seg)-1]
+				i, err := strconv.ParseInt(_i, 10, 32)
+				if err != nil {
+					log.Errorf("The following format string is invalid: '%v'. Error: %v", s, err)
+					return ""
+				}
+				if i >= int64(len(vals)) {
+					log.Errorf("The following format string references more arguments than were supplied: '%v'", s)
+					return ""
+				}
+				if vals[i].IsNull() || vals[i].IsUndefined() {
+					return ""
+				}
+				return vals[i].String()
+			}
+		})
 	})
 }
 
@@ -402,7 +427,7 @@ func (sc *StepContext) vmInputs() func(*otto.Otto) {
 	// Set Defaults
 	if sc.Action != nil {
 		for k, input := range sc.Action.Inputs {
-			inputs[k] = input.Default
+			inputs[k] = sc.RunContext.NewExpressionEvaluator().Interpolate(input.Default)
 		}
 	}
 
@@ -412,6 +437,23 @@ func (sc *StepContext) vmInputs() func(*otto.Otto) {
 
 	return func(vm *otto.Otto) {
 		_ = vm.Set("inputs", inputs)
+	}
+}
+
+func (rc *RunContext) vmNeeds() func(*otto.Otto) {
+	jobs := rc.Run.Workflow.Jobs
+	jobNeeds := rc.Run.Job().Needs()
+
+	using := make(map[string]map[string]map[string]string)
+	for _, needs := range jobNeeds {
+		using[needs] = map[string]map[string]string{
+			"outputs": jobs[needs].Outputs,
+		}
+	}
+
+	return func(vm *otto.Otto) {
+		log.Debugf("context needs => %v", using)
+		_ = vm.Set("needs", using)
 	}
 }
 

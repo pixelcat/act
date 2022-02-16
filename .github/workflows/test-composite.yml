@@ -1,4 +1,4 @@
-name: "Test composite actions"
+name: 'Test composite actions'
 on: push
 
 env:
@@ -14,7 +14,7 @@ jobs:
         id: step0
         uses: ./.github/actions/composite
 
-      - name: "Check action output"
+      - name: 'Check action output'
         if: steps.step0.outputs.output != 'output string'
         run: echo "expected output to be 'output string' but it wasn't"
 

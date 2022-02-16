@@ -18,4 +18,13 @@
 .vscode/
 .idea/
 
+# Path for actions cache created when running tests
+pkg/runner/act/
+
+# act binary
+dist/local/act
+
 coverage.txt
+
+.env
+.secrets

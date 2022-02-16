@@ -8,10 +8,18 @@ import (
 	"testing"
 
 	"github.com/nektos/act/pkg/model"
-	a "github.com/stretchr/testify/assert"
+	assert "github.com/stretchr/testify/assert"
+	yaml "gopkg.in/yaml.v3"
 )
 
 func TestEvaluate(t *testing.T) {
+	var yml yaml.Node
+	err := yml.Encode(map[string][]interface{}{
+		"os":  {"Linux", "Windows"},
+		"foo": {"bar", "baz"},
+	})
+	assert.NoError(t, err)
+
 	rc := &RunContext{
 		Config: &Config{
 			Workdir: ".",
@@ -29,10 +37,7 @@ func TestEvaluate(t *testing.T) {
 				Jobs: map[string]*model.Job{
 					"job1": {
 						Strategy: &model.Strategy{
-							Matrix: map[string][]interface{}{
-								"os":  {"Linux", "Windows"},
-								"foo": {"bar", "baz"},
-							},
+							RawMatrix: yml,
 						},
 					},
 				},
@@ -110,19 +115,27 @@ func TestEvaluate(t *testing.T) {
 		{"env.key", "value", ""},
 		{"secrets.CASE_INSENSITIVE_SECRET", "value", ""},
 		{"secrets.case_insensitive_secret", "value", ""},
+		{"format('{{0}}', 'test')", "{0}", ""},
+		{"format('{{{0}}}', 'test')", "{test}", ""},
+		{"format('}}')", "}", ""},
+		{"format('echo Hello {0} ${{Test}}', 'World')", "echo Hello World ${Test}", ""},
+		{"format('echo Hello {0} ${{Test}}', github.undefined_property)", "echo Hello  ${Test}", ""},
+		{"format('echo Hello {0}{1} ${{Te{0}st}}', github.undefined_property, 'World')", "echo Hello World ${Test}", ""},
+		{"format('{0}', '{1}', 'World')", "{1}", ""},
+		{"format('{{{0}', '{1}', 'World')", "{{1}", ""},
 	}
 
 	for _, table := range tables {
 		table := table
 		t.Run(table.in, func(t *testing.T) {
-			assert := a.New(t)
+			assertObject := assert.New(t)
 			out, _, err := ee.Evaluate(table.in)
 			if table.errMesg == "" {
-				assert.NoError(err, table.in)
-				assert.Equal(table.out, out, table.in)
+				assertObject.NoError(err, table.in)
+				assertObject.Equal(table.out, out, table.in)
 			} else {
-				assert.Error(err, table.in)
-				assert.Equal(table.errMesg, err.Error(), table.in)
+				assertObject.Error(err, table.in)
+				assertObject.Equal(table.errMesg, err.Error(), table.in)
 			}
 		})
 	}
@@ -188,9 +201,9 @@ func TestInterpolate(t *testing.T) {
 	for _, table := range tables {
 		table := table
 		t.Run(table.in, func(t *testing.T) {
-			assert := a.New(t)
+			assertObject := assert.New(t)
 			out := ee.Interpolate(table.in)
-			assert.Equal(table.out, out, table.in)
+			assertObject.Equal(table.out, out, table.in)
 		})
 	}
 }
@@ -199,7 +212,6 @@ func updateTestExpressionWorkflow(t *testing.T, tables []struct {
 	in  string
 	out string
 }, rc *RunContext) {
-
 	var envs string
 	keys := make([]string, 0, len(rc.Env))
 	for k := range rc.Env {
@@ -242,7 +254,6 @@ jobs:
 	if err != nil {
 		t.Fatal(err)
 	}
-
 }
 
 func TestRewrite(t *testing.T) {
@@ -279,9 +290,9 @@ func TestRewrite(t *testing.T) {
 	for _, table := range tables {
 		table := table
 		t.Run(table.in, func(t *testing.T) {
-			assert := a.New(t)
+			assertObject := assert.New(t)
 			re := ee.Rewrite(table.in)
-			assert.Equal(table.re, re, table.in)
+			assertObject.Equal(table.re, re, table.in)
 		})
 	}
 }
